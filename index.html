@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Harmony Reflex Trainer</title>
+    <!-- Підключаємо Tone.js для генерації звуку -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            background-color: #121214;
+            color: #e1e1e6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            background: #202024;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 { font-size: 1.5rem; margin-bottom: 10px; color: #00b37e; }
+        .target-box {
+            font-size: 3rem;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #fba94c;
+        }
+        .instruction {
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            color: #c4c4cc;
+        }
+        .status {
+            font-size: 0.9rem;
+            color: #82828e;
+            margin-top: 20px;
+        }
+        button {
+            background: #00b37e;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #00875f; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Тренажер гармонійних рефлексів</h1>
+        <div class="instruction" id="instruction">Натисніть «Старт», щоб почати тренування</div>
+        <div class="target-box" id="targetChord">-</div>
+        <button id="startBtn" onclick="startTrainer()">Старт</button>
+        <div class="status" id="midiStatus">MIDI статус: Очікування підключення...</div>
+    </div>
+
+    <script>
+        let synth;
+        let currentTarget = null;
+
+        // База простих завдань (Тональність C Major)
+        // Ноти акордів у MIDI нотах або назвах
+        const challenges = [
+            { name: "Тоніка (Cmaj7)", notes: ["C4", "E4", "G4", "B4"] },
+            { name: "Субдомінанта (Fmaj7)", notes: ["F4", "A4", "C5", "E5"] },
+            { name: "Домінанта (G7)", notes: ["G4", "B4", "D5", "F5"] },
+            { name: "Паралельний мінор (Am7)", notes: ["A3", "C4", "E4", "G4"] }
+        ];
+
+        async function startTrainer() {
+            // Ініціалізація аудіоконтексту Tone.js
+            await Tone.start();
+            synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.05, decay: 0.1, sustain: 0.3, release: 1 }
+            }).toDestination();
+
+            document.getElementById("startBtn").style.display = "none";
+            nextChallenge();
+        }
+
+        function nextChallenge() {
+            // Випадковий вибір акорду
+            currentTarget = challenges[Math.floor(Math.random() * challenges.length)];
+            document.getElementById("instruction").innerText = "Зіграй на клавіатурі:";
+            document.getElementById("targetChord").innerText = currentTarget.name;
+        }
+
+        // Підключення MIDI-клавіатури
+        if (navigator.requestMIDIAccess) {
+            navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
+        } else {
+            document.getElementById("midiStatus").innerText = "Web MIDI API не підтримується твоїм браузером.";
+        }
+
+        function onMIDISuccess(midiAccess) {
+            document.getElementById("midiStatus").innerText = "MIDI підключено успішно!";
+            for (let input of midiAccess.inputs.values()) {
+                input.onmidimessage = getMIDIMessage;
+            }
+        }
+
+        function onMIDIFailure() {
+            document.getElementById("midiStatus").innerText = "Не вдалося отримати доступ до MIDI.";
+        }
+
+        let pressedNotes = new Set();
+
+        function getMIDIMessage(message) {
+            let [command, note, velocity] = message.data;
+            
+            // Note On (натискання клавіші)
+            if (command === 144 && velocity > 0) {
+                let noteName = Tone.Frequency(note, "midi").toNote();
+                pressedNotes.add(noteName);
+                synth.triggerAttack(noteName);
+
+                checkUserAnswer();
+            }
+            // Note Off (відпускання клавіші)
+            else if (command === 128 || (command === 144 && velocity === 0)) {
+                let noteName = Tone.Frequency(note, "midi").toNote();
+                pressedNotes.delete(noteName);
+                synth.triggerRelease(noteName);
+            }
+        }
+
+        function checkUserAnswer() {
+            if (!currentTarget) return;
+
+            // Перевіряємо, чи зіграні ноти містять потрібний акорд
+            // (Проста логіка для MVP: якщо затиснуті ноти збігаються з цільовими)
+            let targetSet = new Set(currentTarget.notes);
+            
+            // Якщо користувач затиснув принаймні основні ноти акорду
+            let matches = [...targetSet].every(note => pressedNotes.has(note));
+            
+            if (matches) {
+                document.getElementById("targetChord").style.color = "#00b37e"; // зелений
+                setTimeout(() => {
+                    document.getElementById("targetChord").style.color = "#fba94c";
+                    nextChallenge();
+                }, 600);
+            }
+        }
+    </script>
+</body>
+</html>
